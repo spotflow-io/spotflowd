@@ -1,0 +1,17 @@
+# Provision these two values before starting the service.
+[device]
+id = ""
+ingest_key = ""
+
+[logs]
+journald = @JOURNALD@
+syslog = @SYSLOG@
+syslog_path = "@SYSLOG_PATH@"
+
+[storage]
+state_dir = "@LOCALSTATEDIR@/lib/spotflow"
+
+[crashdump]
+enabled = @CRASHDUMP@
+# systemd-pstore may archive records before this daemon starts.
+paths = ["/sys/fs/pstore", "@LOCALSTATEDIR@/lib/systemd/pstore"]

@@ -1,0 +1,3 @@
+# Account used for both configuration validation and daemon execution.
+DAEMON_USER="@USER@"
+DAEMON_GROUP="@GROUP@"

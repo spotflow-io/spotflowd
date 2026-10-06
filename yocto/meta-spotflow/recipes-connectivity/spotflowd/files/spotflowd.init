@@ -1,0 +1,108 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          spotflowd
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Spotflow observability daemon
+# Description:       Collects logs and metrics from the device and streams
+#                    them to the Spotflow platform over MQTT/TLS.
+### END INIT INFO
+
+DAEMON=@SBINDIR@/spotflowd
+START_STOP_DAEMON=@SBINDIR@/start-stop-daemon
+CONFIG=@SYSCONFDIR@/spotflow/spotflowd.toml
+NAME=spotflowd
+DESC="Spotflow observability daemon"
+RUNDIR=/run/spotflow
+DAEMON_USER=root
+DAEMON_GROUP=root
+STOP_TIMEOUT=30
+
+# shellcheck source=/dev/null
+[ ! -r @SYSCONFDIR@/default/spotflowd ] || . @SYSCONFDIR@/default/spotflowd
+PIDFILE="$RUNDIR/spotflowd.pid"
+
+# Exit if the daemon binary is not installed.
+[ -x "$DAEMON" ] || exit 0
+
+is_running() {
+    # Match the executable as well as the PID; a stale/reused PID is not enough.
+    "$START_STOP_DAEMON" --stop --test --quiet --pidfile "$PIDFILE" --exec "$DAEMON"
+}
+
+start_daemon() {
+    if is_running; then
+        echo "$NAME is already running"
+        return 0
+    fi
+    echo "Starting $DESC ..."
+    mkdir -p "$RUNDIR" || return 1
+    chown "$DAEMON_USER:$DAEMON_GROUP" "$RUNDIR" || return 1
+    chmod 0755 "$RUNDIR" || return 1
+    rm -f "$PIDFILE"
+
+    # Use exactly the same identity for preflight and the running process.
+    if ! "$START_STOP_DAEMON" --start --quiet \
+        --chuid "$DAEMON_USER:$DAEMON_GROUP" --exec "$DAEMON" -- \
+        config-check --config "$CONFIG"; then
+        echo "Configuration check failed; not starting $NAME" >&2
+        return 1
+    fi
+    "$START_STOP_DAEMON" --start --quiet --pidfile "$PIDFILE" --make-pidfile \
+        --background --chuid "$DAEMON_USER:$DAEMON_GROUP" --exec "$DAEMON" -- \
+        run --config "$CONFIG" || return 1
+
+    # Backgrounding alone cannot report an immediate startup failure.
+    sleep 1
+    if ! is_running; then
+        echo "$NAME failed to start" >&2
+        rm -f "$PIDFILE"
+        return 1
+    fi
+}
+
+stop_daemon() {
+    if ! is_running; then
+        rm -f "$PIDFILE"
+        return 0
+    fi
+    echo "Stopping $DESC ..."
+    "$START_STOP_DAEMON" --stop --quiet --pidfile "$PIDFILE" --exec "$DAEMON" \
+        --signal TERM || return 1
+    remaining=$STOP_TIMEOUT
+    while is_running && [ "$remaining" -gt 0 ]; do
+        sleep 1
+        remaining=$((remaining - 1))
+    done
+    if is_running; then
+        "$START_STOP_DAEMON" --stop --quiet --pidfile "$PIDFILE" --exec "$DAEMON" \
+            --signal KILL || return 1
+    fi
+    rm -f "$PIDFILE"
+}
+
+case "$1" in
+    start)
+        start_daemon
+        ;;
+    stop)
+        stop_daemon
+        ;;
+    restart|force-reload)
+        stop_daemon && start_daemon
+        ;;
+    status)
+        if is_running; then
+            echo "$NAME is running"
+        else
+            echo "$NAME is not running"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|force-reload|status}"
+        exit 1
+        ;;
+esac
