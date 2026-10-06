@@ -1,0 +1,81 @@
+name: Yocto
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  integration:
+    name: Integration (${{ matrix.release }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        release: [scarthgap, styhead]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@1.75.0
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsystemd-dev dpkg
+      - name: Check the Scarthgap Rust toolchain
+        run: |
+          cargo check --locked --all-targets
+          cargo test --locked --no-default-features
+          cargo build --locked --no-default-features
+      - name: Check real BitBake metadata and installation
+        run: |
+          git clone --depth 1 --branch "${{ matrix.release }}" https://github.com/yoctoproject/poky.git "$RUNNER_TEMP/poky"
+          POKY_DIR="$RUNNER_TEMP/poky" python3 -m unittest discover -s yocto/tests -v
+      - name: Check SysV lifecycle with the native daemon
+        run: |
+          sudo env PATH="$PATH" SPOTFLOWD_BINARY="$PWD/target/debug/spotflowd" \
+            "$(command -v python3)" -m unittest discover -s yocto/tests -v
+
+  image:
+    name: Image (${{ matrix.release }}, ${{ matrix.init }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        release: [scarthgap, styhead]
+        init: [systemd, sysvinit]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Yocto host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gawk wget git diffstat unzip texinfo gcc build-essential \
+            chrpath socat cpio python3 python3-pip python3-venv python3-pexpect xz-utils debianutils \
+            iputils-ping iproute2 python3-git python3-jinja2 python3-subunit zstd liblz4-tool file locales
+      - name: Cache downloads and shared state
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/yocto-cache/downloads
+            ~/yocto-cache/sstate
+          key: yocto-${{ matrix.release }}-${{ matrix.init }}-${{ hashFiles('Cargo.lock', 'yocto/meta-spotflow/**') }}
+          restore-keys: |
+            yocto-${{ matrix.release }}-${{ matrix.init }}-
+            yocto-${{ matrix.release }}-
+      - name: Build and boot-test the image
+        env:
+          YOCTO_RELEASE: ${{ matrix.release }}
+          YOCTO_INIT: ${{ matrix.init }}
+        run: bash yocto/ci-image.sh
+      - name: Upload build and runtime logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yocto-${{ matrix.release }}-${{ matrix.init }}-logs
+          path: |
+            ${{ runner.temp }}/yocto-build-${{ matrix.release }}-${{ matrix.init }}/tmp/log/
+            ${{ runner.temp }}/yocto-build-${{ matrix.release }}-${{ matrix.init }}/tmp/work/**/spotflowd/**/temp/log.*
+            ${{ runner.temp }}/yocto-build-${{ matrix.release }}-${{ matrix.init }}/tmp/work/*/core-image-minimal/*/testimage/
+            ${{ runner.temp }}/yocto-build-${{ matrix.release }}-${{ matrix.init }}/tmp/work/*/core-image-minimal/*/temp/log.do_testimage*
+            ${{ runner.temp }}/yocto-build-${{ matrix.release }}-${{ matrix.init }}/bitbake-cookerdaemon.log

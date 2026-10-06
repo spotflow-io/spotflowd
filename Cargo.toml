@@ -1,0 +1,61 @@
+[package]
+name = "spotflowd"
+version = "0.2.1"
+edition = "2021"
+rust-version = "1.75"
+description = "Spotflow observability daemon for Linux — collects logs and sends them to the Spotflow platform"
+license = "BUSL-1.1"
+repository = "https://github.com/spotflow-io/spotflowd"
+
+[[bin]]
+name = "spotflowd"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime (minimal feature set — no unused features like io-std, process, test-util)
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "signal", "macros", "net", "io-util", "fs"] }
+
+# MQTT client (rumqttc with rustls TLS)
+rumqttc = { version = "0.24", default-features = false, features = ["use-rustls"] }
+
+# TLS
+rustls = "0.22"
+rustls-native-certs = "0.7"
+
+# CBOR encoding
+ciborium = "0.2"
+
+# Config parsing + JSON (custom metrics socket protocol)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Journald (optional — not available on all targets)
+systemd = { version = "0.10", optional = true }
+
+# Daemon's own logging → stderr / journald
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1"
+
+# System calls (statvfs for disk space)
+libc = "0.2"
+
+# Time
+chrono = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = ["journald"]
+journald = ["dep:systemd"]
+
+[profile.release]
+opt-level = "z"     # optimize for size (important for embedded targets)
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"     # no unwinding code — saves ~50KB; daemon should crash, not unwind
