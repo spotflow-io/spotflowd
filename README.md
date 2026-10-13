@@ -8,17 +8,20 @@ Collects **logs** (journald, syslog), **OS metrics** (CPU, memory, disk, network
 
 ```mermaid
 flowchart LR
-    journald --> buffer[Memory buffer]
-    syslog --> buffer
-    buffer --> spool[Disk spool\non overflow]
-    spool --> mqtt1[MQTT → Spotflow]
+    journald[Journald] --> buffer[Memory buffer]
+    syslog[Syslog] --> buffer
+    buffer --> mqtt[MQTT / TLS]
+    buffer -->|On overflow| spool[Disk spool]
+    spool --> mqtt
 
     proc["/proc, /sys"] --> agg[Aggregator]
-    sock[metrics.sock] --> agg
-    agg --> mqtt2[MQTT → Spotflow]
+    sock["metrics.sock<br/>Custom metrics"] --> agg
+    agg --> mqtt
 
-    pstore["/sys/fs/pstore\nkernel panic"] --> chunks[CORE_DUMP_CHUNK]
-    chunks --> mqtt3[MQTT → Spotflow]
+    pstore["/sys/fs/pstore<br/>Kernel crash dumps"] --> chunks[CORE_DUMP_CHUNK]
+    chunks --> mqtt
+
+    mqtt --> spotflow[Spotflow]
 ```
 
 - **Memory-first buffer** — log entries are held in RAM (configurable size) to minimise flash writes on embedded targets.
@@ -253,7 +256,7 @@ the recommended starting configuration:
 
 ```sh
 nix shell nixpkgs#azure-cli nixpkgs#openssh nixpkgs#rsync nixpkgs#python3 \
-  -c python3 yocto/azure-test.py \
+  -c python3 yocto/azure/test.py \
     --subscription YOUR_SUBSCRIPTION_ID \
     --group spotflowd-yocto-test \
     --location westeurope \
@@ -268,7 +271,7 @@ nix shell nixpkgs#azure-cli nixpkgs#openssh nixpkgs#rsync nixpkgs#python3 \
 
 Azure CLI must be signed in (`az login` once). Tooling requirements, cache
 behavior and options are in the
-[Azure test instructions](yocto/README.md#automated-azure-test).
+[Azure test instructions](yocto/azure/README.md).
 
 </details>
 

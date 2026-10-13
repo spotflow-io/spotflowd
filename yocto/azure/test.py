@@ -15,7 +15,7 @@ import time
 import uuid
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 REMOTE = "/srv/spotflowd"
 VM = "spotflowd-yocto"
 DISK = "spotflowd-yocto-cache"
@@ -218,7 +218,7 @@ class AzureRunner:
         print("Preparing build host and mounting the persistent disk…", flush=True)
         setup = self.az("vm", "run-command", "invoke", *group_args, "--name", VM,
                         "--command-id", "RunShellScript", "--scripts",
-                        "bash <<'SPOTFLOWD_SETUP'\n" + (ROOT / "yocto/azure-setup.sh").read_text()
+                        "bash <<'SPOTFLOWD_SETUP'\n" + (ROOT / "yocto/azure/setup.sh").read_text()
                         + "\nSPOTFLOWD_SETUP")
         messages = "\n".join(value.get("message", "") for value in setup["value"])
         match = re.search(r"SPOTFLOWD_HOST_KEY (ssh-ed25519 [A-Za-z0-9+/=]+)", messages)
@@ -268,7 +268,7 @@ class AzureRunner:
         self.ssh(f"sudo systemctl reset-failed {UNIT}", check=False)
         command = ["sudo", "systemd-run", f"--unit={UNIT}", f"--uid={USER}", f"--gid={USER}",
                    f"--property=WorkingDirectory={REMOTE}/source", "bash",
-                   f"{REMOTE}/source/yocto/azure-build.sh", self.args.release, self.args.init,
+                   f"{REMOTE}/source/yocto/azure/build.sh", self.args.release, self.args.init,
                    str(self.args.threads), run_id, str(self.args.cache_max_gb),
                    "1" if self.args.keep_work else "0", "0" if self.args.no_sstate_mirror else "1"]
         # Persist before launch: an SSH drop after systemd accepts the job must

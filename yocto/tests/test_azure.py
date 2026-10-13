@@ -11,10 +11,10 @@ from unittest.mock import Mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location("azure_test", ROOT / "yocto/azure-test.py")
+spec = importlib.util.spec_from_file_location("azure_test", ROOT / "yocto/azure/test.py")
 azure = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(azure)
-prune_spec = importlib.util.spec_from_file_location("cache_prune", ROOT / "yocto/cache-prune.py")
+prune_spec = importlib.util.spec_from_file_location("cache_prune", ROOT / "yocto/azure/cache-prune.py")
 cache_prune = importlib.util.module_from_spec(prune_spec)
 prune_spec.loader.exec_module(cache_prune)
 
@@ -258,7 +258,7 @@ class HostSetup(unittest.TestCase):
             tool.write_text(f"#!{shutil.which('bash')}\nset -eu\n" + script)
             tool.chmod(0o755)
         # Execute the real package-bootstrap stage, without touching host disks.
-        self.script = (ROOT / "yocto/azure-setup.sh").read_text().split("# LUN 0", 1)[0]
+        self.script = (ROOT / "yocto/azure/setup.sh").read_text().split("# LUN 0", 1)[0]
         self.script = self.script.replace("/var/lib/spotflowd-yocto-host-v3", str(self.marker))
 
     def test_first_boot_waits_for_repository_setup_and_rerun_skips_packages(self):
@@ -384,7 +384,8 @@ class RemoteBuild(unittest.TestCase):
             root = Path(temp)
             source = root / "source/yocto"
             source.mkdir(parents=True)
-            shutil.copy2(ROOT / "yocto/cache-prune.py", source)
+            (source / "azure").mkdir()
+            shutil.copy2(ROOT / "yocto/azure/cache-prune.py", source / "azure")
             # Stand-in for the expensive image builder; use the real Azure matrix
             # orchestration and inspect its persistent cache and captured logs.
             (source / "ci-image.sh").write_text(
@@ -400,7 +401,7 @@ class RemoteBuild(unittest.TestCase):
             env = dict(os.environ, SPOTFLOWD_AZURE_ROOT=temp)
             for run_id in ("first-run", "second-run"):
                 result = subprocess.run(
-                    ["bash", str(ROOT / "yocto/azure-build.sh"), "all", "both", "4", run_id],
+                    ["bash", str(ROOT / "yocto/azure/build.sh"), "all", "both", "4", run_id],
                     env=env, capture_output=True, text=True,
                 )
                 self.assertEqual(result.returncode, 1, result.stderr)
@@ -418,7 +419,7 @@ class RemoteBuild(unittest.TestCase):
             self.assertTrue((root / "runs/second-run/disk-usage.txt").exists())
             self.assertEqual((root / "runs/second-run/styhead-sysvinit/testimage/qemu_boot_log").read_text(), "guest boot\n")
             subprocess.run(
-                ["bash", str(ROOT / "yocto/azure-build.sh"), "scarthgap", "sysvinit", "4",
+                ["bash", str(ROOT / "yocto/azure/build.sh"), "scarthgap", "sysvinit", "4",
                  "keep-work-run", "64", "1", "0"], env=env, capture_output=True, text=True, check=True,
             )
             self.assertTrue((root / "build-scarthgap-sysvinit/tmp").exists())

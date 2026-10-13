@@ -25,7 +25,7 @@ export YOCTO_CACHE="$root/cache" YOCTO_THREADS="$threads"
 
 # Prune only while BitBake is not running; retain downloads for future builds.
 prune_cache() {
-    python3 "$root/source/yocto/cache-prune.py" "$YOCTO_CACHE/sstate" --max-gb "$cache_max_gb"
+    python3 "$root/source/yocto/azure/cache-prune.py" "$YOCTO_CACHE/sstate" --max-gb "$cache_max_gb"
 }
 prune_cache
 
