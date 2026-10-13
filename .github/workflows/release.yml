@@ -5,10 +5,18 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Reuse CI on the same tagged commit, including tests and the dependency audit.
+  validate:
+    name: Validate release
+    uses: ./.github/workflows/ci.yml
+
   build-release:
     name: Build ${{ matrix.target }} (${{ matrix.variant }})
     runs-on: ubuntu-latest
@@ -55,6 +63,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Verify tag matches Cargo.toml version
         run: |
@@ -75,7 +85,7 @@ jobs:
 
       - name: Install cross
         if: matrix.use_cross
-        run: cargo install cross --version 0.2.5
+        run: cargo install cross --version 0.2.5 --locked
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -88,11 +98,11 @@ jobs:
 
       - name: Build (native)
         if: "!matrix.use_cross"
-        run: cargo build --release --target ${{ matrix.target }} ${{ matrix.build_flags }}
+        run: cargo build --locked --release --target ${{ matrix.target }} ${{ matrix.build_flags }}
 
       - name: Build (cross)
         if: matrix.use_cross
-        run: cross build --release --target ${{ matrix.target }} ${{ matrix.build_flags }}
+        run: cross build --locked --release --target ${{ matrix.target }} ${{ matrix.build_flags }}
 
       - name: Package tarball
         run: |
@@ -113,12 +123,14 @@ jobs:
 
   publish-release:
     name: Publish GitHub Release
-    needs: build-release
+    needs: [validate, build-release]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -134,7 +146,7 @@ jobs:
           cp install.sh release/
           # Generate checksums
           cd release
-          sha256sum * > checksums-sha256.txt
+          sha256sum -- * > checksums-sha256.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
