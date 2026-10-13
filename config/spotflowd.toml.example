@@ -1,0 +1,144 @@
+# spotflowd configuration file
+# Default location: /etc/spotflow/spotflowd.toml
+#
+# Only [device] is required — all other sections have sensible defaults.
+# Uncomment and modify individual settings as needed.
+
+# ---------------------------------------------------------------------------
+# Device identity (REQUIRED)
+# ---------------------------------------------------------------------------
+
+[device]
+id = "my-device-001"
+ingest_key = "sk_..."
+
+# ---------------------------------------------------------------------------
+# MQTT connection
+# ---------------------------------------------------------------------------
+# Normally you do not need to change these.
+
+# [mqtt]
+# broker = "mqtt.spotflow.io"
+# port = 8883
+# keepalive_secs = 60
+
+# ---------------------------------------------------------------------------
+# Persistent storage
+# ---------------------------------------------------------------------------
+# Shared root for all persistent daemon state. The daemon uses separate
+# subdirectories: spool/ for log chunks, metrics/ for sequence numbers, and
+# crashdump/ for crash-dump deduplication state. Must be an absolute path.
+
+# [storage]
+# state_dir = "/var/lib/spotflow"
+
+# ---------------------------------------------------------------------------
+# Log collection
+# ---------------------------------------------------------------------------
+# spotflowd can collect logs from two sources: systemd journal and syslog.
+#
+# On systemd builds (default), journald is enabled and syslog is disabled
+# to avoid duplicate entries. On non-systemd builds (Yocto), the opposite
+# applies automatically — no config change needed.
+
+# [logs]
+# journald = true
+# journald_scope = "all"             # all local journals | system only
+# syslog = false
+# syslog_path = "/var/log/syslog"
+# startup_max_entries = 1000          # newest current-boot records per source; 0 = no replay
+# Startup records are replayed chronologically before following new logs, even
+# while offline. Journald uses the boot ID; syslog filters the configured file
+# by timestamp (year-less local timestamps are inferred). Timestamp-less lines
+# are replayed best effort within the same cap and may include older boots.
+
+# ---------------------------------------------------------------------------
+# Log buffer
+# ---------------------------------------------------------------------------
+# Logs are held in memory first, then flushed to disk chunks on overflow.
+# When the disk spool is full, the oldest chunks are dropped.
+# The size limit applies only to log chunks in <storage.state_dir>/spool;
+# it does not limit metrics or crash-dump state.
+
+# [logs.buffer]
+# memory_max_entries = 1000
+# disk_max_size_mb = 64             # MiB of log spool chunks
+# disk_chunk_max_entries = 200
+
+# ---------------------------------------------------------------------------
+# Metrics aggregation
+# ---------------------------------------------------------------------------
+# Shared aggregation window for OS and custom application metrics.
+
+# [metrics]
+# aggregation_interval = "1m"       # none | 1m | 1h | 1d
+
+# ---------------------------------------------------------------------------
+# OS metrics
+# ---------------------------------------------------------------------------
+# Collects CPU, memory, disk, network, and system metrics from /proc and /sys.
+# Disabled by default — set enabled = true under [metrics.os] to turn on.
+
+# [metrics.os]
+# enabled = false
+# collection_interval_secs = 10
+
+# Enable or disable individual metric groups.
+# All groups are enabled by default when [metrics.os] enabled = true.
+
+# [metrics.os.groups]
+# cpu     = true    # cpu_utilization_percent, load averages, temperature
+# memory  = true    # mem_used_percent, mem_available_bytes, swap_used_percent
+# disk    = true    # disk_free_bytes, disk_used_percent, disk_read/write_bytes
+# network = true    # network_rx/tx_bytes, net_rx/tx_errors, net_rx/tx_drops
+# system  = true    # uptime_ms, process_count, fd_used, fd_max
+
+# [metrics.os.disk]
+# mount_points = ["/"]
+
+# [metrics.os.network]
+# interfaces = []                   # empty = auto-detect all non-loopback
+
+# ---------------------------------------------------------------------------
+# Custom application metrics
+# ---------------------------------------------------------------------------
+# Any local process can publish metrics via a Unix socket using
+# newline-delimited JSON. Independent of OS metrics — works on its own.
+#
+# Example:  echo '{"name":"queue_depth","value":42}' | nc -UN /run/spotflow/metrics.sock
+
+# [metrics.custom]
+# enabled = false
+# socket_path = "/run/spotflow/metrics.sock"
+
+# ---------------------------------------------------------------------------
+# Local status interface
+# ---------------------------------------------------------------------------
+# `spotflowd status` reads diagnostics from this local Unix socket. It does not
+# require network connectivity and never exposes the ingest key.
+
+# [status]
+# socket_path = "/run/spotflow/status.sock"
+
+# ---------------------------------------------------------------------------
+# Kernel crash dumps
+# ---------------------------------------------------------------------------
+# Collects kernel panic/oops backtraces from pstore (ramoops-backed reserved
+# RAM, EFI, or ACPI ERST) and uploads them as crash reports. A panic implies a
+# reboot, so records are captured on the next startup and cleared afterwards.
+#
+# Requires the daemon to run as ROOT — reading and clearing /sys/fs/pstore
+# needs root. Disabled by default.
+#
+# If systemd-pstore.service is active it moves records into
+# /var/lib/systemd/pstore before we see them; either disable that service or
+# add its archive directory to `paths`.
+
+# [crashdump]
+# enabled = false
+# paths = ["/sys/fs/pstore"]        # add "/var/lib/systemd/pstore" for systemd-pstore
+# kinds = ["dmesg", "console"]      # pstore record prefixes to collect
+# delete_after_capture = true       # free the ramoops ring after upload
+# poll_interval_secs = 300          # rescan cadence (startup scan always runs)
+# max_bytes = 262144                # per-record cap (truncate pathological dumps)
+# chunk_bytes = 8192                # dump bytes per CORE_DUMP_CHUNK message

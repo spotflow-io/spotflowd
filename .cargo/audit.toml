@@ -1,0 +1,11 @@
+[advisories]
+# Reviewed 2026-10-13. Applies only to rumqttc 0.25.1's unused WebPKI 0.102.8
+# Error type. TLS certificate validation uses rustls 0.23 / WebPKI >=0.103.13.
+# rumqttc references only webpki::Error; it does not call the old verifier.
+# Reassess these exceptions when changing the MQTT/TLS dependencies.
+ignore = [
+    "RUSTSEC-2026-0049", # CRL distribution point matching
+    "RUSTSEC-2026-0098", # URI name constraints
+    "RUSTSEC-2026-0099", # Wildcard DNS name constraints
+    "RUSTSEC-2026-0104", # CRL parsing panic
+]

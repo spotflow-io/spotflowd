@@ -1,0 +1,40 @@
+[Unit]
+Description=Spotflow observability daemon
+Documentation=https://github.com/spotflow-io/spotflowd
+# Start after journald is available (when journald source is enabled).
+After=systemd-journald.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/spotflowd config-check --config /etc/spotflow/spotflowd.toml
+ExecStart=/usr/sbin/spotflowd run --config /etc/spotflow/spotflowd.toml
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=5s
+
+# Run as a dedicated user for least privilege.
+User=spotflow
+Group=spotflow
+
+# Allow reading the journal.
+SupplementaryGroups=systemd-journal adm
+
+# Shared persistent state directory (/var/lib/spotflow).
+StateDirectory=spotflow
+StateDirectoryMode=0750
+
+# Runtime directory for the custom metrics socket (/run/spotflow).
+# systemd creates it owned by the service user before start, cleans it on stop.
+# Mode 0755 so other users can traverse it to reach the socket.
+RuntimeDirectory=spotflow
+RuntimeDirectoryMode=0755
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/spotflow
+
+[Install]
+WantedBy=multi-user.target
