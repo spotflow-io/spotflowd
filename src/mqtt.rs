@@ -114,7 +114,7 @@ impl MqttPublisher {
 
 fn build_client_config() -> Arc<ClientConfig> {
     let mut root_store = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs().unwrap_or_default() {
+    for cert in rustls_native_certs::load_native_certs().certs {
         root_store.add(cert).ok(); // skip any malformed certs silently
     }
     let config = ClientConfig::builder()

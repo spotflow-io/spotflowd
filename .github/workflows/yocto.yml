@@ -46,6 +46,7 @@ jobs:
 
   image:
     name: Image (${{ matrix.release }}, ${{ matrix.init }})
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     timeout-minutes: 240
     strategy:

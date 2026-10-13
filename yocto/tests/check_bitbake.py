@@ -115,10 +115,20 @@ with bb.tinfoil.Tinfoil() as tinfoil:
                     assert "ExecStart=/usr/sbin/spotflowd run --config /etc/spotflow/spotflowd.toml" in content
                     assert ("ReadWritePaths=-/sys/fs/pstore" in content) == crashdump
                     if shutil.which("systemd-analyze"):
-                        # Required default targets in an otherwise empty test root.
+                        # Verify with an isolated unit search path. Ubuntu 22.04's
+                        # systemd 249 cannot use --root with verify, so point the
+                        # executable directives at the staged binary in a copy.
+                        verify_dir = work / "verify-units"
+                        verify_dir.mkdir()
                         for name in ("sysinit", "basic", "multi-user", "shutdown"):
-                            unit.with_name(f"{name}.target").write_text("[Unit]\nDefaultDependencies=no\n")
-                        subprocess.run(["systemd-analyze", f"--root={image}", "--man=no", "verify", "spotflowd.service"], check=True)
+                            (verify_dir / f"{name}.target").write_text("[Unit]\nDefaultDependencies=no\n")
+                        verify_unit = verify_dir / unit.name
+                        executable = data.getVar("sbindir") + "/spotflowd"
+                        verify_unit.write_text(content.replace(executable, str(image) + executable))
+                        verify_env = os.environ.copy()
+                        verify_env["SYSTEMD_UNIT_PATH"] = str(verify_dir)
+                        subprocess.run(["systemd-analyze", "--man=no", "verify", str(verify_unit)],
+                                       env=verify_env, check=True)
                 print(f"validated {init}: PACKAGECONFIG={features!r}")
 
     # The class-selected default must agree with the runtime log source.
