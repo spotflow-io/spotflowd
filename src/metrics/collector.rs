@@ -1,12 +1,12 @@
 //! OS metric collector — reads /proc and /sys on each tick.
 //!
-//! Some counter metrics (network errors/drops) are sent as **absolute cumulative
-//! totals**, matching the Zephyr SDK convention.  The Spotflow platform computes
-//! deltas and rates server-side.
+//! Device-wide network byte counters and per-interface errors/drops are sent as
+//! **cumulative totals**, matching the Zephyr SDK convention. The Spotflow
+//! platform computes deltas and rates server-side.
 //!
 //! Disk I/O (`disk_read_bytes`, `disk_write_bytes`, `disk_read_ops`,
-//! `disk_write_ops`) and network throughput (`network_rx_bytes`,
-//! `network_tx_bytes`) compute deltas locally so the values flow through
+//! `disk_write_ops`) and per-interface throughput (`net_rx_bytes`,
+//! `net_tx_bytes`) compute deltas locally so the values flow through
 //! normal aggregation.
 //!
 //! `disk_io_util_percent` is a derived gauge computed locally from consecutive
@@ -57,6 +57,10 @@ pub struct Collector {
     prev_disk: HashMap<String, DiskCounters>,
     prev_disk_time: Option<Instant>,
     prev_net: HashMap<String, NetCounters>,
+    // Observed traffic since collector startup. Keep totals across interface
+    // disappearance/reset so the device-wide dashboard counters never decrease.
+    network_rx_bytes: u64,
+    network_tx_bytes: u64,
 }
 
 impl Collector {
@@ -66,6 +70,8 @@ impl Collector {
             prev_disk: HashMap::new(),
             prev_disk_time: None,
             prev_net: HashMap::new(),
+            network_rx_bytes: 0,
+            network_tx_bytes: 0,
         }
     }
 
@@ -90,7 +96,7 @@ impl Collector {
             let filter = if cfg.network.interfaces.is_empty() {
                 None
             } else {
-                Some(&cfg.network.interfaces)
+                Some(cfg.network.interfaces.as_slice())
             };
             self.collect_network(&mut samples, filter);
         }
@@ -185,8 +191,16 @@ impl Collector {
 
     // --- Network ---
 
-    fn collect_network(&mut self, out: &mut Vec<MetricSample>, filter: Option<&Vec<String>>) {
-        let curr = read_net_dev();
+    fn collect_network(&mut self, out: &mut Vec<MetricSample>, filter: Option<&[String]>) {
+        self.collect_network_snapshot(out, read_net_dev(), filter);
+    }
+
+    fn collect_network_snapshot(
+        &mut self,
+        out: &mut Vec<MetricSample>,
+        curr: HashMap<String, NetCounters>,
+        filter: Option<&[String]>,
+    ) {
         for (iface, c) in &curr {
             if let Some(f) = filter {
                 if !f.contains(iface) {
@@ -195,19 +209,21 @@ impl Collector {
             }
             let lbl = &[("interface", iface.clone())];
 
-            // rx/tx bytes: emit delta between consecutive readings so the
-            // value flows through normal aggregation instead of growing
-            // monotonically.  Skip the first tick (no previous reading).
+            // Preserve per-interface deltas for custom dashboards under separate
+            // names: the built-in widget ignores labels and expects device totals.
+            // The first reading of each interface establishes its baseline.
             if let Some(prev) = self.prev_net.get(iface) {
-                let rx_delta = c.rx_bytes.saturating_sub(prev.rx_bytes);
-                let tx_delta = c.tx_bytes.saturating_sub(prev.tx_bytes);
+                let rx_delta = counter_delta(c.rx_bytes, prev.rx_bytes);
+                let tx_delta = counter_delta(c.tx_bytes, prev.tx_bytes);
+                self.network_rx_bytes = self.network_rx_bytes.saturating_add(rx_delta);
+                self.network_tx_bytes = self.network_tx_bytes.saturating_add(tx_delta);
                 out.push(sample(
-                    "network_rx_bytes",
+                    "net_rx_bytes",
                     MetricValue::Int(rx_delta as i64),
                     lbl,
                 ));
                 out.push(sample(
-                    "network_tx_bytes",
+                    "net_tx_bytes",
                     MetricValue::Int(tx_delta as i64),
                     lbl,
                 ));
@@ -235,6 +251,19 @@ impl Collector {
                 lbl,
             ));
         }
+        // One unlabeled cumulative stream per direction, including an initial
+        // zero baseline. Bypass timed aggregation: summing counters would make
+        // the dashboard's server-side delta/rate calculation incorrect.
+        out.push(counter_sample(
+            "network_rx_bytes",
+            MetricValue::Int(self.network_rx_bytes as i64),
+            &[],
+        ));
+        out.push(counter_sample(
+            "network_tx_bytes",
+            MetricValue::Int(self.network_tx_bytes as i64),
+            &[],
+        ));
         self.prev_net = curr;
     }
 }
@@ -242,6 +271,12 @@ impl Collector {
 // ---------------------------------------------------------------------------
 // Stateless collectors (no inter-tick state needed)
 // ---------------------------------------------------------------------------
+
+fn counter_delta(current: u64, previous: u64) -> u64 {
+    // A lower reading indicates that the kernel/interface counter reset. Count
+    // traffic since that reset rather than decreasing the device-wide total.
+    current.checked_sub(previous).unwrap_or(current)
+}
 
 fn collect_load_avg(out: &mut Vec<MetricSample>) {
     if let Some((l1, l5, l15)) = read_load_avg() {
@@ -608,5 +643,187 @@ fn gauge_sample(
             .collect(),
         counter: false,
         raw: true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::MetricsConfig;
+    use crate::metrics::aggregator::Aggregator;
+    use crate::metrics::AGG_NONE;
+
+    fn network_snapshot(interfaces: &[(&str, u64, u64)]) -> HashMap<String, NetCounters> {
+        interfaces
+            .iter()
+            .map(|&(name, rx_bytes, tx_bytes)| {
+                (
+                    name.to_string(),
+                    NetCounters {
+                        rx_bytes,
+                        tx_bytes,
+                        rx_errors: 0,
+                        tx_errors: 0,
+                        rx_drops: 0,
+                        tx_drops: 0,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn collect(
+        collector: &mut Collector,
+        interfaces: &[(&str, u64, u64)],
+        filter: Option<&[String]>,
+    ) -> Vec<MetricSample> {
+        let mut samples = Vec::new();
+        collector.collect_network_snapshot(&mut samples, network_snapshot(interfaces), filter);
+        samples
+    }
+
+    fn assert_totals(samples: &[MetricSample], rx: u64, tx: u64) {
+        for (name, expected) in [("network_rx_bytes", rx), ("network_tx_bytes", tx)] {
+            let totals: Vec<_> = samples.iter().filter(|s| s.name == name).collect();
+            assert_eq!(totals.len(), 1, "expected one device-wide {name} stream");
+            let total = totals[0];
+            assert!(total.labels.is_empty());
+            assert!(total.counter);
+            assert_eq!(total.value.as_f64(), expected as f64);
+        }
+    }
+
+    #[test]
+    fn network_totals_are_cumulative_and_keep_per_interface_deltas() {
+        let mut collector = Collector::new();
+        let first = collect(&mut collector, &[("eth0", 1000, 2000)], None);
+        assert_totals(&first, 0, 0);
+        assert!(!first.iter().any(|s| s.name == "net_rx_bytes"));
+
+        let second = collect(&mut collector, &[("eth0", 1600, 2900)], None);
+        assert_totals(&second, 600, 900);
+        for (name, expected) in [("net_rx_bytes", 600.0), ("net_tx_bytes", 900.0)] {
+            let sample = second.iter().find(|s| s.name == name).unwrap();
+            assert_eq!(sample.labels, vec![("interface".into(), "eth0".into())]);
+            assert!(!sample.counter);
+            assert_eq!(sample.value.as_f64(), expected);
+        }
+
+        let third = collect(&mut collector, &[("eth0", 1800, 3300)], None);
+        assert_totals(&third, 800, 1300);
+    }
+
+    #[test]
+    fn network_totals_sum_interfaces_instead_of_reporting_the_largest() {
+        let mut collector = Collector::new();
+        collect(
+            &mut collector,
+            &[("eth0", 1000, 2000), ("wlan0", 500, 100)],
+            None,
+        );
+        let samples = collect(
+            &mut collector,
+            &[("eth0", 1400, 2100), ("wlan0", 800, 150)],
+            None,
+        );
+        assert_totals(&samples, 700, 150);
+        assert_eq!(
+            samples.iter().filter(|s| s.name == "net_rx_bytes").count(),
+            2
+        );
+    }
+
+    #[test]
+    fn network_filter_applies_to_totals_and_per_interface_metrics() {
+        let mut collector = Collector::new();
+        let filter = vec!["wlan0".to_string()];
+        collect(
+            &mut collector,
+            &[("eth0", 1000, 2000), ("wlan0", 100, 200)],
+            Some(&filter),
+        );
+        let samples = collect(
+            &mut collector,
+            &[("eth0", 9000, 9000), ("wlan0", 400, 600)],
+            Some(&filter),
+        );
+        assert_totals(&samples, 300, 400);
+        for sample in samples.iter().filter(|s| !s.labels.is_empty()) {
+            assert_eq!(sample.labels, vec![("interface".into(), "wlan0".into())]);
+        }
+    }
+
+    #[test]
+    fn network_totals_survive_interface_disappearance_and_reappearance() {
+        let mut collector = Collector::new();
+        collect(&mut collector, &[("eth0", 1000, 2000)], None);
+        assert_totals(
+            &collect(&mut collector, &[("eth0", 1100, 2200)], None),
+            100,
+            200,
+        );
+        assert_totals(&collect(&mut collector, &[], None), 100, 200);
+        // A reappearing/new interface establishes a fresh baseline, rather than
+        // injecting its entire historical traffic into the device-wide counter.
+        assert_totals(
+            &collect(&mut collector, &[("eth0", 5000, 6000)], None),
+            100,
+            200,
+        );
+        assert_totals(
+            &collect(&mut collector, &[("eth0", 5050, 6100)], None),
+            150,
+            300,
+        );
+    }
+
+    #[test]
+    fn network_counter_resets_do_not_decrease_device_totals() {
+        let mut collector = Collector::new();
+        collect(&mut collector, &[("eth0", 1000, 2000)], None);
+        assert_totals(
+            &collect(&mut collector, &[("eth0", 1100, 2300)], None),
+            100,
+            300,
+        );
+        assert_totals(
+            &collect(&mut collector, &[("eth0", 20, 2400)], None),
+            120,
+            400,
+        );
+        assert_totals(
+            &collect(&mut collector, &[("eth0", 50, 10)], None),
+            150,
+            410,
+        );
+    }
+
+    #[test]
+    fn network_totals_bypass_all_aggregation_windows() {
+        let dir = tempfile::tempdir().unwrap();
+        for interval in ["none", "1m", "1h", "1d"] {
+            let config = MetricsConfig {
+                aggregation_interval: interval.into(),
+                ..MetricsConfig::default()
+            };
+            let mut aggregator = Aggregator::new(&config, dir.path().join(interval)).unwrap();
+            let mut collector = Collector::new();
+            let baseline = collect(&mut collector, &[("eth0", 1000, 2000)], None);
+            aggregator.ingest(baseline, 1000);
+            let samples = collect(&mut collector, &[("eth0", 1300, 2500)], None);
+            let ready = aggregator.ingest(samples, 2000);
+            for (name, expected) in [("network_rx_bytes", 300.0), ("network_tx_bytes", 500.0)] {
+                let totals: Vec<_> = ready.iter().filter(|m| m.name == name).collect();
+                assert_eq!(totals.len(), 1);
+                let total = totals[0];
+                assert!(total.labels.is_empty());
+                assert_eq!(total.agg_cbor, AGG_NONE);
+                assert_eq!(total.sum, expected);
+                assert_eq!(total.seq, 2);
+                assert!(total.count.is_none());
+                assert!(total.min.is_none());
+                assert!(total.max.is_none());
+            }
+        }
     }
 }

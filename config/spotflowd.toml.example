@@ -98,6 +98,11 @@ ingest_key = "sk_..."
 
 # [metrics.os.network]
 # interfaces = []                   # empty = auto-detect all non-loopback
+# network_rx_bytes / network_tx_bytes are device-wide cumulative traffic since
+# daemon startup, emitted every collection tick without aggregation for the
+# built-in Device Dashboard. New interfaces establish a baseline on first read.
+# net_rx_bytes / net_tx_bytes are per-interface deltas (interface label), using
+# the configured aggregation window. Both honor the interfaces filter above.
 
 # ---------------------------------------------------------------------------
 # Custom application metrics
