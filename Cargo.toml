@@ -1,6 +1,6 @@
 [package]
 name = "spotflowd"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 rust-version = "1.75"
 description = "Spotflow observability daemon for Linux — collects logs and sends them to the Spotflow platform"
