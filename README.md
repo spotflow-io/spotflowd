@@ -476,8 +476,28 @@ Metric groups (all enabled by default):
 | `cpu` | `cpu_utilization_percent`, `cpu_load_avg_1m`, `cpu_load_avg_5m`, `cpu_load_avg_15m`, `cpu_temperature` |
 | `memory` | `mem_available_bytes`, `mem_used_percent`, `swap_used_percent` |
 | `disk` | `disk_free_bytes`, `disk_used_percent`, `disk_inodes_used_percent`, `disk_read_bytes`, `disk_write_bytes`, `disk_read_ops`, `disk_write_ops`, `disk_io_util_percent` |
-| `network` | `network_rx_bytes`, `network_tx_bytes`, `net_rx_errors`, `net_tx_errors`, `net_rx_drops`, `net_tx_drops` |
+| `network` | `network_rx_bytes`, `network_tx_bytes`, `net_rx_bytes`, `net_tx_bytes`, `net_rx_errors`, `net_tx_errors`, `net_rx_drops`, `net_tx_drops` |
 | `system` | `uptime_ms`, `process_count`, `fd_used`, `fd_max` |
+
+**Network traffic:** `network_rx_bytes` and `network_tx_bytes` are device-wide
+cumulative counters compatible with the built-in Device Dashboard. They sum
+observed traffic across the selected non-loopback interfaces, start at zero when
+the daemon starts, and are published on every collection tick without aggregation.
+The platform computes traffic rates from differences between these totals.
+Interface disappearance or a detected counter reset does not decrease the totals.
+The first reading of each new/reappearing interface establishes a baseline;
+traffic before that reading or while an interface is absent is not included.
+
+`net_rx_bytes` and `net_tx_bytes` retain per-interface byte deltas with an
+`interface` label and use the configured aggregation window. Use their sums in
+custom dashboards; do not apply another cumulative-counter delta calculation.
+The network `interfaces` filter applies to both device totals and interface metrics.
+
+**Migrating network dashboards:** Earlier versions reported per-interface deltas
+under `network_rx_bytes` and `network_tx_bytes`. Update custom widgets that sum
+those deltas or filter/group them by `interface` to use `net_rx_bytes` and
+`net_tx_bytes` instead. The old names now contain unlabeled cumulative totals;
+do not mix pre-upgrade and post-upgrade samples in the same rate calculation.
 
 Disable a group to reduce traffic on constrained devices:
 
