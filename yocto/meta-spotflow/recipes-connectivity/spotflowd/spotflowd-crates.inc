@@ -62,7 +62,7 @@ SRC_URI += " \
     crate://crates.io/ring/0.17.14 \
     crate://crates.io/rumqttc/0.25.1 \
     crate://crates.io/rustix/0.38.44 \
-    crate://crates.io/rustls/0.23.45 \
+    crate://crates.io/rustls/0.23.46 \
     crate://crates.io/rustls-native-certs/0.8.5 \
     crate://crates.io/rustls-pemfile/2.2.0 \
     crate://crates.io/rustls-pki-types/1.15.1 \
@@ -200,7 +200,7 @@ SRC_URI[regex-syntax-0.8.11.sha256sum] = "d6f6ff9a378485b298a5286656da665ba74413
 SRC_URI[ring-0.17.14.sha256sum] = "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7"
 SRC_URI[rumqttc-0.25.1.sha256sum] = "0feff8d882bff0b2fddaf99355a10336d43dd3ed44204f85ece28cf9626ab519"
 SRC_URI[rustix-0.38.44.sha256sum] = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
-SRC_URI[rustls-0.23.45.sha256sum] = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+SRC_URI[rustls-0.23.46.sha256sum] = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 SRC_URI[rustls-native-certs-0.8.5.sha256sum] = "4a073f5dc7469f984c52ad2752b63b0807745133b6de880b7b64c1ac4c48aec4"
 SRC_URI[rustls-pemfile-2.2.0.sha256sum] = "dce314e5fee3f39953d46bb63bb8a46d40c2f8fb7cc5a3b6cab2bde9721d6e50"
 SRC_URI[rustls-pki-types-1.15.1.sha256sum] = "2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96"

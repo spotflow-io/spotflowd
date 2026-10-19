@@ -1,6 +1,6 @@
 [package]
 name = "spotflowd"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 rust-version = "1.75"
 description = "Spotflow observability daemon for Linux — collects logs and sends them to the Spotflow platform"
@@ -19,7 +19,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "signal"
 rumqttc = { version = "0.25.1", default-features = false, features = ["use-rustls-no-provider"] }
 
 # TLS
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-native-certs = "0.8"
 
 # CBOR encoding
